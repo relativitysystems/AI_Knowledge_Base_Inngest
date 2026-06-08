@@ -3,14 +3,22 @@
 const { createClient } = require('@supabase/supabase-js');
 const config = require('../config');
 
-const supabase = createClient(config.supabase.url, config.supabase.serviceKey);
+const aikbSupabase = createClient(
+  config.supabase.aikb.url,
+  config.supabase.aikb.serviceKey
+);
+
+const globalSupabase = createClient(
+  config.supabase.global.url,
+  config.supabase.global.serviceKey
+);
 
 // ---------------------------------------------------------------------------
 // Ingestion jobs
 // ---------------------------------------------------------------------------
 
 async function createIngestionJob(clientId, sourceFileId) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_ingestion_jobs')
     .insert({ client_id: clientId, source_file_id: sourceFileId, status: 'queued' })
     .select()
@@ -25,7 +33,7 @@ async function updateIngestionJob(jobId, { status, errorMessage, documentId } = 
   if (errorMessage !== undefined) patch.error_message = errorMessage;
   if (documentId !== undefined) patch.document_id = documentId;
 
-  const { error } = await supabase
+  const { error } = await aikbSupabase
     .from('knowledge_ingestion_jobs')
     .update(patch)
     .eq('id', jobId);
@@ -40,7 +48,7 @@ async function logIngestionError(jobId, documentId, err) {
   };
   if (documentId) patch.document_id = documentId;
 
-  const { error } = await supabase
+  const { error } = await aikbSupabase
     .from('knowledge_ingestion_jobs')
     .update(patch)
     .eq('id', jobId);
@@ -48,7 +56,7 @@ async function logIngestionError(jobId, documentId, err) {
 }
 
 async function getIngestionJobsByClient(clientId) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_ingestion_jobs')
     .select('*')
     .eq('client_id', clientId)
@@ -64,7 +72,7 @@ async function getIngestionJobsByClient(clientId) {
 
 async function upsertKnowledgeDocument(clientId, provider, fileId, fileName, mimeType, contentHash) {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .upsert(
       {
@@ -86,7 +94,7 @@ async function upsertKnowledgeDocument(clientId, provider, fileId, fileName, mim
 }
 
 async function getKnowledgeDocumentBySourceId(clientId, provider, fileId) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .select('*')
     .eq('client_id', clientId)
@@ -98,7 +106,7 @@ async function getKnowledgeDocumentBySourceId(clientId, provider, fileId) {
 }
 
 async function getKnowledgeDocumentById(documentId) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .select('*')
     .eq('id', documentId)
@@ -108,7 +116,7 @@ async function getKnowledgeDocumentById(documentId) {
 }
 
 async function getDocumentsByClient(clientId) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .select('*')
     .eq('client_id', clientId)
@@ -119,7 +127,7 @@ async function getDocumentsByClient(clientId) {
 }
 
 async function getAllIndexedDocumentSourceIds(clientId, provider) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .select('source_file_id')
     .eq('client_id', clientId)
@@ -130,7 +138,7 @@ async function getAllIndexedDocumentSourceIds(clientId, provider) {
 }
 
 async function getAllIndexedDocuments(clientId, provider) {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .select('id, source_file_id, content_hash')
     .eq('client_id', clientId)
@@ -141,7 +149,7 @@ async function getAllIndexedDocuments(clientId, provider) {
 }
 
 async function markDocumentIndexed(documentId) {
-  const { error } = await supabase
+  const { error } = await aikbSupabase
     .from('knowledge_documents')
     .update({ status: 'indexed', last_indexed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', documentId);
@@ -149,7 +157,7 @@ async function markDocumentIndexed(documentId) {
 }
 
 async function markDocumentDeleted(documentId) {
-  const { error } = await supabase
+  const { error } = await aikbSupabase
     .from('knowledge_documents')
     .update({ status: 'deleted', updated_at: new Date().toISOString() })
     .eq('id', documentId);
@@ -157,7 +165,7 @@ async function markDocumentDeleted(documentId) {
 }
 
 async function markDocumentError(documentId, errorMessage) {
-  const { error } = await supabase
+  const { error } = await aikbSupabase
     .from('knowledge_documents')
     .update({ status: 'error', error_message: errorMessage, updated_at: new Date().toISOString() })
     .eq('id', documentId);
@@ -165,7 +173,7 @@ async function markDocumentError(documentId, errorMessage) {
 }
 
 async function getDistinctClientIds() {
-  const { data, error } = await supabase
+  const { data, error } = await aikbSupabase
     .from('knowledge_documents')
     .select('client_id')
     .neq('status', 'deleted');
@@ -180,7 +188,7 @@ async function getDistinctClientIds() {
 // ---------------------------------------------------------------------------
 
 async function deleteChunksForDocument(documentId) {
-  const { error } = await supabase
+  const { error } = await aikbSupabase
     .from('knowledge_chunks')
     .delete()
     .eq('document_id', documentId);
@@ -193,9 +201,37 @@ async function insertKnowledgeChunks(chunks) {
   const BATCH = 500;
   for (let i = 0; i < chunks.length; i += BATCH) {
     const batch = chunks.slice(i, i + BATCH);
-    const { error } = await supabase.from('knowledge_chunks').insert(batch);
+    const { error } = await aikbSupabase.from('knowledge_chunks').insert(batch);
     if (error) throw new Error(`insertKnowledgeChunks (batch ${i}): ${error.message}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Global client validation (Relativity_Global project)
+// ---------------------------------------------------------------------------
+
+async function getGlobalClientById(clientId) {
+  const { data, error } = await globalSupabase
+    .from('clients')
+    .select('*')
+    .eq('id', clientId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) throw new Error(`getGlobalClientById: ${error.message}`);
+  return data;
+}
+
+async function requireActiveClient(clientId) {
+  const client = await getGlobalClientById(clientId);
+
+  if (!client) {
+    const err = new Error('Client not found or inactive');
+    err.status = 404;
+    throw err;
+  }
+
+  return client;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +239,7 @@ async function insertKnowledgeChunks(chunks) {
 // ---------------------------------------------------------------------------
 
 async function searchChunks(clientId, queryEmbedding, { threshold = 0.7, count = 5 } = {}) {
-  const { data, error } = await supabase.rpc('match_knowledge_chunks', {
+  const { data, error } = await aikbSupabase.rpc('match_knowledge_chunks', {
     query_embedding: queryEmbedding,
     match_client_id: clientId,
     match_threshold: threshold,
@@ -231,4 +267,6 @@ module.exports = {
   deleteChunksForDocument,
   insertKnowledgeChunks,
   searchChunks,
+  getGlobalClientById,
+  requireActiveClient,
 };

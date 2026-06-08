@@ -14,8 +14,14 @@ const config = {
     nodeEnv: process.env.NODE_ENV || 'development',
   },
   supabase: {
-    url: require_env('SUPABASE_URL'),
-    serviceKey: require_env('SUPABASE_SERVICE_KEY'),
+    aikb: {
+      url: require_env('AIKB_SUPABASE_URL'),
+      serviceKey: require_env('AIKB_SUPABASE_SERVICE_KEY'),
+    },
+    global: {
+      url: require_env('GLOBAL_SUPABASE_URL'),
+      serviceKey: require_env('GLOBAL_SUPABASE_SERVICE_KEY'),
+    },
   },
   openai: {
     apiKey: require_env('OPENAI_API_KEY'),

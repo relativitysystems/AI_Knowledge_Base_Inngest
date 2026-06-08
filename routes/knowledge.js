@@ -42,6 +42,8 @@ router.post('/ingest', async (req, res, next) => {
       return res.status(400).json({ error: 'clientId, sourceFileId, fileName, and mimeType are required' });
     }
 
+    await supabaseService.requireActiveClient(clientId);
+
     const [event] = await inngest.send({
       name: 'knowledge/document.ingest',
       data: { clientId, sourceProvider, sourceFileId, fileName, mimeType },
@@ -65,6 +67,8 @@ router.post('/reindex', async (req, res, next) => {
     if (!clientId || !sourceFileId) {
       return res.status(400).json({ error: 'clientId and sourceFileId are required' });
     }
+
+    await supabaseService.requireActiveClient(clientId);
 
     const [event] = await inngest.send({
       name: 'knowledge/document.reindex',
@@ -96,6 +100,8 @@ router.delete('/document/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'Provide either a document UUID as :id or sourceFileId in the body' });
     }
 
+    await supabaseService.requireActiveClient(clientId);
+
     const [event] = await inngest.send({
       name: 'knowledge/document.delete',
       data: { clientId, documentId, sourceFileId, sourceProvider },
@@ -114,6 +120,7 @@ router.delete('/document/:id', async (req, res, next) => {
 
 router.get('/documents/:clientId', async (req, res, next) => {
   try {
+    await supabaseService.requireActiveClient(req.params.clientId);
     const docs = await supabaseService.getDocumentsByClient(req.params.clientId);
     res.json({ documents: docs });
   } catch (err) {
@@ -128,6 +135,7 @@ router.get('/documents/:clientId', async (req, res, next) => {
 
 router.get('/jobs/:clientId', async (req, res, next) => {
   try {
+    await supabaseService.requireActiveClient(req.params.clientId);
     const jobs = await supabaseService.getIngestionJobsByClient(req.params.clientId);
     res.json({ jobs });
   } catch (err) {
@@ -162,6 +170,8 @@ router.post('/query', async (req, res, next) => {
     if (!clientId || !question) {
       return res.status(400).json({ error: 'clientId and question are required' });
     }
+
+    await supabaseService.requireActiveClient(clientId);
 
     // 1. Embed the question
     const queryEmbedding = await openaiService.embedQuery(question);
