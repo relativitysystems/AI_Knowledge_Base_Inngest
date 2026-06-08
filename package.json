@@ -1,0 +1,22 @@
+{
+  "name": "relativity-knowledge-base",
+  "version": "1.0.0",
+  "description": "Relativity Systems reusable AI Knowledge Base backend — multi-client document ingestion, indexing, and RAG Q&A",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "dotenv": "^16",
+    "express": "^4",
+    "googleapis": "^140",
+    "inngest": "^3",
+    "openai": "^4",
+    "pdf-parse": "^1"
+  },
+  "devDependencies": {
+    "nodemon": "^3"
+  }
+}

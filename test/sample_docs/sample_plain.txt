@@ -1,0 +1,41 @@
+Relativity Systems — Client Onboarding SOP
+
+Purpose
+
+This document outlines the standard operating procedure for onboarding a new Relativity Systems client. Follow these steps in order to ensure a consistent and professional experience.
+
+Step 1: Initial Discovery Call
+
+Schedule a 30-minute discovery call with the client contact. During this call, confirm the client's primary business goals, identify pain points in their current workflows, and determine which Relativity services are the best fit.
+
+Required inputs: client name, primary contact email, business description.
+
+Step 2: Proposal and Agreement
+
+Within 48 hours of the discovery call, send a tailored proposal using the approved Relativity proposal template. The proposal must include the selected service package, pricing, estimated timeline, and any custom terms discussed during the call.
+
+Do not include internal cost structures or margin details in the client proposal.
+
+Step 3: Contract and Payment Setup
+
+Once the client approves the proposal, send the contract via DocuSign. After the contract is signed, set up the client's billing profile and send the first invoice. Standard payment terms are net 14.
+
+Step 4: Onboarding Kickoff
+
+Schedule a 60-minute kickoff call within 5 business days of contract signing. During the kickoff, introduce the client to their dedicated Relativity contact, review the project scope, confirm communication channels (Slack or email), and set expectations for the first 30 days.
+
+Step 5: System Access and Configuration
+
+Provision the client with access to relevant Relativity systems (n8n, Supabase, Slack workspace) based on their service package. Document all credentials and access grants in the internal client registry. Share only the credentials the client needs — do not share internal admin credentials.
+
+Definition of Done
+
+The onboarding is complete when:
+- The contract is signed and payment is confirmed
+- The kickoff call has taken place
+- All system access has been provisioned and documented
+- The client has received a welcome message from their Relativity contact
+
+Escalation
+
+If any onboarding step cannot be completed within the stated timeframe, notify the client proactively and escalate to Tenzin (Relativity Systems founder) via Slack.
