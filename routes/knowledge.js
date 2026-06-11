@@ -69,21 +69,37 @@ router.post('/ingest', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/knowledge/reindex
 // Force re-ingest a document regardless of content hash.
-// Body: { clientId, sourceFileId, sourceProvider?, fileName?, mimeType? }
+// Body: { clientId, sourceFileId, sourceProvider?, fileName?, mimeType?, storagePath? }
 // ---------------------------------------------------------------------------
 
 router.post('/reindex', async (req, res, next) => {
   try {
-    const { clientId, sourceFileId, sourceProvider = 'google_drive', fileName, mimeType } = req.body;
+    const {
+      clientId,
+      sourceFileId,
+      sourceProvider = 'google_drive',
+      fileName,
+      mimeType,
+      storagePath,
+    } = req.body;
+
     if (!clientId || !sourceFileId) {
       return res.status(400).json({ error: 'clientId and sourceFileId are required' });
+    }
+    if (sourceProvider !== 'google_drive' && sourceProvider !== 'portal_upload') {
+      return res.status(400).json({ error: 'Unsupported sourceProvider' });
+    }
+    if (sourceProvider === 'portal_upload' && (!fileName || !mimeType || !storagePath)) {
+      return res.status(400).json({
+        error: 'fileName, mimeType, and storagePath are required when sourceProvider is portal_upload',
+      });
     }
 
     await supabaseService.requireActiveClient(clientId);
 
     const [event] = await inngest.send({
       name: 'knowledge/document.reindex',
-      data: { clientId, sourceProvider, sourceFileId, fileName, mimeType },
+      data: { clientId, sourceProvider, sourceFileId, fileName, mimeType, storagePath },
     });
 
     res.json({ queued: true, eventId: event.id });
