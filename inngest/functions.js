@@ -39,6 +39,7 @@ const ingestDocument = inngest.createFunction(
       fileName,
       mimeType,
       forceReindex = false,
+      storagePath,
     } = event.data;
 
     // Track job + document IDs across steps so onFailure can log them
@@ -59,7 +60,10 @@ const ingestDocument = inngest.createFunction(
       return supabaseService.getKnowledgeDocumentBySourceId(clientId, sourceProvider, sourceFileId);
     });
 
-    if (existing && existing.status === 'indexed' && !forceReindex) {
+    // Google Drive supports md5Checksum for a quick pre-download dedup.
+    // portal_upload has no equivalent — content-hash dedup below covers it.
+    if (existing && existing.status === 'indexed' && !forceReindex
+        && sourceProvider === 'google_drive') {
       // Fetch current Drive metadata to compare content hash
       const metadata = await step.run('fetch-metadata-for-dedup', async () => {
         return googleDriveService.getFileMetadata(sourceFileId);
@@ -79,11 +83,21 @@ const ingestDocument = inngest.createFunction(
       await supabaseService.updateIngestionJob(job.id, { status: 'running' });
     });
 
-    // -- Step 4: Fetch document from Google Drive -----------------------------
+    // -- Step 4: Fetch document (provider-specific) ---------------------------
     const { buffer, resolvedMimeType } = await step.run('fetch-document', async () => {
-      const result = await googleDriveService.downloadFileAsText(sourceFileId, mimeType);
-      // Buffer doesn't survive Inngest step serialization; convert to base64
-      return { buffer: result.buffer.toString('base64'), resolvedMimeType: result.resolvedMimeType };
+      if (sourceProvider === 'portal_upload') {
+        if (!storagePath) throw new Error('portal_upload document missing storagePath in event data');
+        const result = await supabaseService.downloadFromStorage(storagePath);
+        // Fall back to event mimeType if Storage didn't return a useful content-type
+        const finalMime = result.resolvedMimeType || mimeType;
+        // Buffer doesn't survive Inngest step serialization; convert to base64
+        return { buffer: result.buffer.toString('base64'), resolvedMimeType: finalMime };
+      } else if (sourceProvider === 'google_drive') {
+        const result = await googleDriveService.downloadFileAsText(sourceFileId, mimeType);
+        return { buffer: result.buffer.toString('base64'), resolvedMimeType: result.resolvedMimeType };
+      } else {
+        throw new Error(`Unsupported sourceProvider: ${sourceProvider}`);
+      }
     });
 
     // -- Step 5: Parse document to plain text ---------------------------------
@@ -113,7 +127,8 @@ const ingestDocument = inngest.createFunction(
         sourceFileId,
         fileName,
         resolvedMimeType,
-        contentHash
+        contentHash,
+        storagePath || undefined
       );
     });
     documentId = doc.id;
@@ -205,6 +220,13 @@ const deleteDocument = inngest.createFunction(
       await supabaseService.markDocumentDeleted(doc.id);
     });
 
+    // -- Step 4 (optional): Remove file from Supabase Storage for portal uploads
+    if (doc.source_provider === 'portal_upload' && doc.storage_path) {
+      await step.run('delete-storage-file', async () => {
+        await supabaseService.deleteFromStorage(doc.storage_path);
+      });
+    }
+
     return { success: true, documentId: doc.id };
   }
 );
@@ -224,10 +246,18 @@ const reindexDocument = inngest.createFunction(
   },
   { event: 'knowledge/document.reindex' },
   async ({ event, step }) => {
-    const { clientId, sourceFileId, sourceProvider = 'google_drive', fileName, mimeType } = event.data;
+    const {
+      clientId, sourceFileId, sourceProvider = 'google_drive',
+      fileName, mimeType, storagePath,
+    } = event.data;
 
-    // Fetch current file metadata if not provided
     const fileMeta = await step.run('fetch-file-metadata', async () => {
+      if (sourceProvider === 'portal_upload') {
+        if (!fileName || !mimeType || !storagePath) {
+          throw new Error('portal_upload reindex requires fileName, mimeType, and storagePath');
+        }
+        return { name: fileName, mimeType };
+      }
       if (fileName && mimeType) return { name: fileName, mimeType };
       return googleDriveService.getFileMetadata(sourceFileId);
     });
@@ -241,6 +271,7 @@ const reindexDocument = inngest.createFunction(
         fileName: fileMeta.name || fileName,
         mimeType: fileMeta.mimeType || mimeType,
         forceReindex: true,
+        storagePath: storagePath || undefined,
       },
     });
 

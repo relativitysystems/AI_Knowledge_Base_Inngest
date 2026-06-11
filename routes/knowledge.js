@@ -31,22 +31,33 @@ router.use(requireApiKey);
 
 // ---------------------------------------------------------------------------
 // POST /api/knowledge/ingest
-// Trigger ingestion of a single document from Google Drive.
-// Body: { clientId, sourceFileId, fileName, mimeType, sourceProvider? }
+// Trigger ingestion of a single document (Google Drive or portal upload).
+// Body: { clientId, sourceFileId, fileName, mimeType, sourceProvider?, storagePath? }
 // ---------------------------------------------------------------------------
 
 router.post('/ingest', async (req, res, next) => {
   try {
-    const { clientId, sourceFileId, fileName, mimeType, sourceProvider = 'google_drive' } = req.body;
+    const {
+      clientId, sourceFileId, fileName, mimeType,
+      sourceProvider = 'google_drive',
+      storagePath,
+    } = req.body;
+
     if (!clientId || !sourceFileId || !fileName || !mimeType) {
       return res.status(400).json({ error: 'clientId, sourceFileId, fileName, and mimeType are required' });
+    }
+    if (sourceProvider !== 'google_drive' && sourceProvider !== 'portal_upload') {
+      return res.status(400).json({ error: 'Unsupported sourceProvider' });
+    }
+    if (sourceProvider === 'portal_upload' && !storagePath) {
+      return res.status(400).json({ error: 'storagePath is required when sourceProvider is portal_upload' });
     }
 
     await supabaseService.requireActiveClient(clientId);
 
     const [event] = await inngest.send({
       name: 'knowledge/document.ingest',
-      data: { clientId, sourceProvider, sourceFileId, fileName, mimeType },
+      data: { clientId, sourceProvider, sourceFileId, fileName, mimeType, storagePath },
     });
 
     res.json({ queued: true, eventId: event.id });

@@ -14,6 +14,32 @@ const globalSupabase = createClient(
 );
 
 // ---------------------------------------------------------------------------
+// Supabase Storage
+// ---------------------------------------------------------------------------
+
+async function downloadFromStorage(storagePath) {
+  const bucket = config.storage.bucket;
+  const { data, error } = await aikbSupabase.storage
+    .from(bucket)
+    .download(storagePath);
+  if (error) throw new Error(`downloadFromStorage: ${error.message} (path: ${storagePath})`);
+  if (!data) throw new Error(`downloadFromStorage: no data returned for path: ${storagePath}`);
+  const buffer = Buffer.from(await data.arrayBuffer());
+  // Use Blob content-type if meaningful; caller falls back to event mimeType otherwise
+  const resolvedMimeType =
+    data.type && data.type !== 'application/octet-stream' ? data.type : null;
+  return { buffer, resolvedMimeType };
+}
+
+async function deleteFromStorage(storagePath) {
+  const bucket = config.storage.bucket;
+  const { error } = await aikbSupabase.storage.from(bucket).remove([storagePath]);
+  if (error) {
+    console.warn(`[deleteFromStorage] Could not remove ${storagePath}: ${error.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Ingestion jobs
 // ---------------------------------------------------------------------------
 
@@ -70,23 +96,25 @@ async function getIngestionJobsByClient(clientId) {
 // Documents
 // ---------------------------------------------------------------------------
 
-async function upsertKnowledgeDocument(clientId, provider, fileId, fileName, mimeType, contentHash) {
+async function upsertKnowledgeDocument(
+  clientId, provider, fileId, fileName, mimeType, contentHash,
+  storagePath = undefined
+) {
   const now = new Date().toISOString();
+  const payload = {
+    client_id: clientId,
+    source_provider: provider,
+    source_file_id: fileId,
+    file_name: fileName,
+    mime_type: mimeType,
+    content_hash: contentHash,
+    status: 'indexing',
+    updated_at: now,
+  };
+  if (storagePath) payload.storage_path = storagePath; // only write when truthy; never overwrite with null
   const { data, error } = await aikbSupabase
     .from('knowledge_documents')
-    .upsert(
-      {
-        client_id: clientId,
-        source_provider: provider,
-        source_file_id: fileId,
-        file_name: fileName,
-        mime_type: mimeType,
-        content_hash: contentHash,
-        status: 'indexing',
-        updated_at: now,
-      },
-      { onConflict: 'client_id,source_provider,source_file_id' }
-    )
+    .upsert(payload, { onConflict: 'client_id,source_provider,source_file_id' })
     .select()
     .single();
   if (error) throw new Error(`upsertKnowledgeDocument: ${error.message}`);
@@ -250,6 +278,8 @@ async function searchChunks(clientId, queryEmbedding, { threshold = 0.7, count =
 }
 
 module.exports = {
+  downloadFromStorage,
+  deleteFromStorage,
   createIngestionJob,
   updateIngestionJob,
   logIngestionError,

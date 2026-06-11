@@ -43,6 +43,9 @@ const config = {
     botToken: process.env.SLACK_BOT_TOKEN,
     signingSecret: process.env.SLACK_SIGNING_SECRET,
   },
+  storage: {
+    bucket: process.env.AIKB_STORAGE_BUCKET || 'aikb-documents',
+  },
   apiKey: process.env.API_KEY,
 };
 
