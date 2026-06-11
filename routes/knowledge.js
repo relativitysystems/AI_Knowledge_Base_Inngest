@@ -55,12 +55,12 @@ router.post('/ingest', async (req, res, next) => {
 
     await supabaseService.requireActiveClient(clientId);
 
-    const [event] = await inngest.send({
+    const event = await inngest.send({
       name: 'knowledge/document.ingest',
       data: { clientId, sourceProvider, sourceFileId, fileName, mimeType, storagePath },
     });
 
-    res.json({ queued: true, eventId: event.id });
+    res.json({ queued: true, eventId: event.ids?.[0] || event.id || null });
   } catch (err) {
     next(err);
   }
@@ -97,12 +97,12 @@ router.post('/reindex', async (req, res, next) => {
 
     await supabaseService.requireActiveClient(clientId);
 
-    const [event] = await inngest.send({
+    const event = await inngest.send({
       name: 'knowledge/document.reindex',
       data: { clientId, sourceProvider, sourceFileId, fileName, mimeType, storagePath },
     });
 
-    res.json({ queued: true, eventId: event.id });
+    res.json({ queued: true, eventId: event.ids?.[0] || event.id || null });
   } catch (err) {
     next(err);
   }
@@ -129,12 +129,12 @@ router.delete('/document/:id', async (req, res, next) => {
 
     await supabaseService.requireActiveClient(clientId);
 
-    const [event] = await inngest.send({
+    const event = await inngest.send({
       name: 'knowledge/document.delete',
       data: { clientId, documentId, sourceFileId, sourceProvider },
     });
 
-    res.json({ queued: true, eventId: event.id });
+    res.json({ queued: true, eventId: event.ids?.[0] || event.id || null });
   } catch (err) {
     next(err);
   }
@@ -177,8 +177,8 @@ router.get('/jobs/:clientId', async (req, res, next) => {
 
 router.post('/sync', async (req, res, next) => {
   try {
-    const [event] = await inngest.send({ name: 'knowledge/scheduled-sync', data: {} });
-    res.json({ queued: true, eventId: event.id });
+    const event = await inngest.send({ name: 'knowledge/scheduled-sync', data: {} });
+    res.json({ queued: true, eventId: event.ids?.[0] || event.id || null });
   } catch (err) {
     next(err);
   }
