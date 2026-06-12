@@ -205,6 +205,15 @@ function isKnowledgeGapAnswer(answer) {
   ].some((phrase) => normalized.includes(phrase));
 }
 
+// Replaces any "Source: <filename>" line with "Source: N/A".
+// If no Source line exists, appends one so the response format stays consistent.
+function normalizeGapAnswerSource(answer) {
+  if (/^Source\s*:/im.test(answer)) {
+    return answer.replace(/^Source\s*:\s*.*$/gim, 'Source: N/A');
+  }
+  return `${answer}\n\nSource: N/A`;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/knowledge/query
 // Synchronous RAG query: vector search + LLM answer.
@@ -253,7 +262,7 @@ router.post('/query', async (req, res, next) => {
     });
 
     if (!chunks.length) {
-      const answer = 'I couldn\'t find any relevant information in the knowledge base for your question.';
+      const answer = normalizeGapAnswerSource('I couldn\'t find any relevant information in the knowledge base for your question.');
       await supabaseService.createChatMessage({
         clientId,
         sessionId,
@@ -285,23 +294,24 @@ router.post('/query', async (req, res, next) => {
       }
     }
 
-    // 5. Save the assistant message with sources and chunk metadata
-    const metadata = {
+    const chunkMetadata = {
       chunkCount: chunks.length,
       documentIds: [...new Set(chunks.map((c) => c.document_id))],
     };
-    await supabaseService.createChatMessage({
-      clientId,
-      sessionId,
-      role: 'assistant',
-      content: answer,
-      sources,
-      metadata,
-    });
+    const isGap = isKnowledgeGapAnswer(answer);
 
-    // 6. Log a knowledge gap if the LLM indicated the question wasn't covered,
-    //    even though chunks were retrieved (weak vector matches).
-    if (isKnowledgeGapAnswer(answer)) {
+    if (isGap) {
+      // The LLM indicated this question isn't covered despite chunks being retrieved
+      // (weak vector match). Normalize the Source line, return no sources.
+      const normalizedAnswer = normalizeGapAnswerSource(answer);
+      await supabaseService.createChatMessage({
+        clientId,
+        sessionId,
+        role: 'assistant',
+        content: normalizedAnswer,
+        sources: [],
+        metadata: chunkMetadata,
+      });
       await supabaseService.createKnowledgeGap({
         clientId,
         sessionId,
@@ -309,7 +319,18 @@ router.post('/query', async (req, res, next) => {
         question,
         reason: 'answer_indicated_not_found',
       });
+      return res.json({ answer: normalizedAnswer, sources: [], sessionId });
     }
+
+    // 5. Save the assistant message with real sources and chunk metadata
+    await supabaseService.createChatMessage({
+      clientId,
+      sessionId,
+      role: 'assistant',
+      content: answer,
+      sources,
+      metadata: chunkMetadata,
+    });
 
     res.json({ answer, sources, sessionId });
   } catch (err) {
