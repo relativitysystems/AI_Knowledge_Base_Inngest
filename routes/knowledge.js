@@ -205,8 +205,8 @@ router.post('/query', async (req, res, next) => {
 
     // 2. Retrieve relevant chunks scoped to this client
     const chunks = await supabaseService.searchChunks(clientId, queryEmbedding, {
-      threshold: 0.7,
-      count: 5,
+      threshold: 0.3,
+      count: 8,
     });
 
     if (!chunks.length) {
