@@ -70,6 +70,9 @@ const ingestDocument = inngest.createFunction(
       // -- Step 4: Fetch document from Supabase Storage -----------------------
       const { buffer, resolvedMimeType } = await step.run('fetch-document', async () => {
         const result = await supabaseService.downloadFromStorage(storagePath);
+        if (result.buffer.length > config.maxUploadBytes) {
+          throw new Error(`Uploaded file exceeds max size limit of ${config.maxUploadBytes} bytes`);
+        }
         const finalMime = result.resolvedMimeType || mimeType;
         // Buffer doesn't survive Inngest step serialization; convert to base64
         return { buffer: result.buffer.toString('base64'), resolvedMimeType: finalMime };
@@ -94,6 +97,21 @@ const ingestDocument = inngest.createFunction(
           await supabaseService.updateIngestionJob(job.id, { status: 'completed', documentId: existing.id });
         });
         return { skipped: true, reason: 'content hash unchanged', documentId: existing.id };
+      }
+
+      // -- Step 6b: Cross-file duplicate content check (same client, skipped on forceReindex) --
+      if (!forceReindex) {
+        const contentDuplicate = await step.run('check-content-duplicate', async () => {
+          return supabaseService.getIndexedDocumentByContentHash(
+            clientId, sourceProvider, contentHash, sourceFileId
+          );
+        });
+        if (contentDuplicate) {
+          await step.run('skip-duplicate-content', async () => {
+            await supabaseService.updateIngestionJob(job.id, { status: 'completed', documentId: contentDuplicate.id });
+          });
+          return { skipped: true, reason: 'duplicate content', duplicateOfDocumentId: contentDuplicate.id };
+        }
       }
 
       // -- Step 7: Upsert document record --------------------------------------
@@ -249,7 +267,7 @@ const reindexDocument = inngest.createFunction(
       throw new Error('Unsupported sourceProvider. This backend currently supports portal_upload only.');
     }
 
-    const fileMeta = await step.run('fetch-file-metadata', async () => {
+    const fileMeta = await step.run('validate-file-metadata', async () => {
       if (!fileName || !mimeType || !storagePath) {
         throw new Error('reindex requires fileName, mimeType, and storagePath');
       }

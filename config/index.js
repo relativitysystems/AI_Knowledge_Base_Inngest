@@ -38,6 +38,7 @@ const config = {
   storage: {
     bucket: process.env.AIKB_STORAGE_BUCKET || 'aikb-documents',
   },
+  maxUploadBytes: parseInt(process.env.MAX_UPLOAD_BYTES || String(10 * 1024 * 1024), 10),
   apiKey: process.env.API_KEY,
 };
 

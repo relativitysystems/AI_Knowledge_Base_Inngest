@@ -397,6 +397,25 @@ async function listChatMessages(clientId, sessionId) {
 }
 
 // ---------------------------------------------------------------------------
+// Duplicate content detection
+// ---------------------------------------------------------------------------
+
+async function getIndexedDocumentByContentHash(clientId, provider, contentHash, excludeSourceFileId) {
+  const { data, error } = await aikbSupabase
+    .from('knowledge_documents')
+    .select('id, source_file_id')
+    .eq('client_id', clientId)
+    .eq('source_provider', provider)
+    .eq('content_hash', contentHash)
+    .eq('status', 'indexed')
+    .neq('source_file_id', excludeSourceFileId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`getIndexedDocumentByContentHash: ${error.message}`);
+  return data || null;
+}
+
+// ---------------------------------------------------------------------------
 // Knowledge gaps
 // ---------------------------------------------------------------------------
 
@@ -441,4 +460,5 @@ module.exports = {
   createChatMessage,
   listChatMessages,
   createKnowledgeGap,
+  getIndexedDocumentByContentHash,
 };
