@@ -31,26 +31,26 @@ router.use(requireApiKey);
 
 // ---------------------------------------------------------------------------
 // POST /api/knowledge/ingest
-// Trigger ingestion of a single document (Google Drive or portal upload).
-// Body: { clientId, sourceFileId, fileName, mimeType, sourceProvider?, storagePath? }
+// Trigger ingestion of a single document (portal upload only).
+// Body: { clientId, sourceFileId, fileName, mimeType, storagePath, sourceProvider? }
 // ---------------------------------------------------------------------------
 
 router.post('/ingest', async (req, res, next) => {
   try {
     const {
       clientId, sourceFileId, fileName, mimeType,
-      sourceProvider = 'google_drive',
+      sourceProvider = 'portal_upload',
       storagePath,
     } = req.body;
 
     if (!clientId || !sourceFileId || !fileName || !mimeType) {
       return res.status(400).json({ error: 'clientId, sourceFileId, fileName, and mimeType are required' });
     }
-    if (sourceProvider !== 'google_drive' && sourceProvider !== 'portal_upload') {
-      return res.status(400).json({ error: 'Unsupported sourceProvider' });
+    if (sourceProvider !== 'portal_upload') {
+      return res.status(400).json({ error: 'Unsupported sourceProvider. This backend currently supports portal_upload only.' });
     }
-    if (sourceProvider === 'portal_upload' && !storagePath) {
-      return res.status(400).json({ error: 'storagePath is required when sourceProvider is portal_upload' });
+    if (!storagePath) {
+      return res.status(400).json({ error: 'storagePath is required' });
     }
 
     await supabaseService.requireActiveClient(clientId);
@@ -69,7 +69,7 @@ router.post('/ingest', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/knowledge/reindex
 // Force re-ingest a document regardless of content hash.
-// Body: { clientId, sourceFileId, sourceProvider?, fileName?, mimeType?, storagePath? }
+// Body: { clientId, sourceFileId, fileName, mimeType, storagePath, sourceProvider? }
 // ---------------------------------------------------------------------------
 
 router.post('/reindex', async (req, res, next) => {
@@ -77,7 +77,7 @@ router.post('/reindex', async (req, res, next) => {
     const {
       clientId,
       sourceFileId,
-      sourceProvider = 'google_drive',
+      sourceProvider = 'portal_upload',
       fileName,
       mimeType,
       storagePath,
@@ -86,12 +86,12 @@ router.post('/reindex', async (req, res, next) => {
     if (!clientId || !sourceFileId) {
       return res.status(400).json({ error: 'clientId and sourceFileId are required' });
     }
-    if (sourceProvider !== 'google_drive' && sourceProvider !== 'portal_upload') {
-      return res.status(400).json({ error: 'Unsupported sourceProvider' });
+    if (sourceProvider !== 'portal_upload') {
+      return res.status(400).json({ error: 'Unsupported sourceProvider. This backend currently supports portal_upload only.' });
     }
-    if (sourceProvider === 'portal_upload' && (!fileName || !mimeType || !storagePath)) {
+    if (!fileName || !mimeType || !storagePath) {
       return res.status(400).json({
-        error: 'fileName, mimeType, and storagePath are required when sourceProvider is portal_upload',
+        error: 'fileName, mimeType, and storagePath are required',
       });
     }
 
@@ -118,7 +118,7 @@ router.post('/reindex', async (req, res, next) => {
 router.delete('/document/:id', async (req, res, next) => {
   try {
     const documentId = req.params.id !== 'by-source' ? req.params.id : undefined;
-    const { clientId, sourceFileId, sourceProvider = 'google_drive' } = req.body || {};
+    const { clientId, sourceFileId, sourceProvider = 'portal_upload' } = req.body || {};
 
     if (!clientId) {
       return res.status(400).json({ error: 'clientId is required' });
@@ -165,20 +165,6 @@ router.get('/jobs/:clientId', async (req, res, next) => {
     await supabaseService.requireActiveClient(req.params.clientId);
     const jobs = await supabaseService.getIngestionJobsByClient(req.params.clientId);
     res.json({ jobs });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/knowledge/sync
-// Manually trigger the scheduled sync (useful for testing and portal "Sync Now" button).
-// ---------------------------------------------------------------------------
-
-router.post('/sync', async (req, res, next) => {
-  try {
-    const event = await inngest.send({ name: 'knowledge/scheduled-sync', data: {} });
-    res.json({ queued: true, eventId: event.ids?.[0] || event.id || null });
   } catch (err) {
     next(err);
   }

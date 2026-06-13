@@ -21,10 +21,7 @@ Copy `.env.example` to `.env` and fill in the values below.
 | `OPENAI_EMBEDDING_MODEL` | No (default `text-embedding-3-small`) | Embedding model name |
 | `INNGEST_EVENT_KEY` | No | Inngest event key (required in production) |
 | `INNGEST_SIGNING_KEY` | No | Inngest signing key (required in production) |
-| `AIKB_STORAGE_BUCKET` | Yes (for `portal_upload`) | Supabase Storage bucket name where portal documents are uploaded |
-| `GOOGLE_DRIVE_FOLDER_ID` | No | Google Drive folder ID — only required for `google_drive` source provider |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | No | Service account email — only required for `google_drive` source provider |
-| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | No | Service account private key — only required for `google_drive` source provider |
+| `AIKB_STORAGE_BUCKET` | Yes | Supabase Storage bucket name where portal documents are uploaded |
 | `API_KEY` | Yes (in production) | Shared secret for `x-api-key` header on all `/api/knowledge/*` routes |
 | `SLACK_BOT_TOKEN` | No | Slack bot token for the RAG Slack bot |
 | `SLACK_SIGNING_SECRET` | No | Slack signing secret for event verification |
@@ -111,21 +108,6 @@ curl -X POST http://localhost:3000/api/knowledge/ingest \
 Response:
 ```json
 { "queued": true, "eventId": "01JABCDEF..." }
-```
-
-### Ingest a document — Google Drive
-
-```bash
-curl -X POST http://localhost:3000/api/knowledge/ingest \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
-  -d '{
-    "clientId": "00000000-0000-0000-0000-000000000001",
-    "sourceFileId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
-    "fileName": "SOP Document.pdf",
-    "mimeType": "application/pdf",
-    "sourceProvider": "google_drive"
-  }'
 ```
 
 ### Query the knowledge base
@@ -234,18 +216,14 @@ curl -X DELETE http://localhost:3000/api/knowledge/document/YOUR-DOCUMENT-UUID \
 
 ---
 
-## Source Providers
-
-| Value | Description |
-|---|---|
-| `google_drive` | Document downloaded from Google Drive using a service account |
-| `portal_upload` | Document uploaded via the Relativity client portal, stored in Supabase Storage |
-
----
-
 ## Architecture
 
+> Google Drive sync has been intentionally removed to keep the MVP focused on portal-uploaded documents.
+
 ```
+Portal upload → Supabase Storage
+        │
+        ▼
 POST /api/knowledge/ingest
         │
         ▼
@@ -254,18 +232,19 @@ POST /api/knowledge/ingest
         ▼
   1. Create ingestion job
   2. Check for existing document (dedup)
-  3. [google_drive only] md5 dedup via Drive metadata
-  4. Mark job running
-  5. Fetch file — google_drive → Google Drive API
-                — portal_upload → Supabase Storage
-  6. Parse text (PDF, plain text, CSV, Markdown)
-  7. Compute SHA-256 content hash
-  8. Content hash dedup (skips if unchanged)
-  9. Upsert document record
-  10. Delete old chunks
-  11. Chunk text (4000 chars, 400 char overlap)
-  12. Generate embeddings (text-embedding-3-small, batched)
-  13. Insert chunks into knowledge_chunks (pgvector)
-  14. Mark document indexed
-  15. Complete job
+  3. Mark job running
+  4. Download file from Supabase Storage
+  5. Parse text (PDF, plain text, CSV, Markdown)
+  6. Compute SHA-256 content hash
+  7. Content hash dedup (skips if unchanged)
+  8. Upsert document record
+  9. Delete old chunks
+  10. Chunk text (4000 chars, 400 char overlap)
+  11. Generate embeddings (text-embedding-3-small, batched)
+  12. Insert chunks into knowledge_chunks (pgvector)
+  13. Mark document indexed
+  14. Complete job
+        │
+        ▼
+  POST /api/knowledge/query → vector search → AI answer with citations
 ```

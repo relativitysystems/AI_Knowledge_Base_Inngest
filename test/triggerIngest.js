@@ -7,12 +7,14 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const API_KEY  = process.env.API_KEY  || '';
 
 // ---------------------------------------------------------------------------
-// Edit these values to match a real file in your configured Google Drive folder
+// Edit these values to match a real file uploaded to Supabase Storage.
+// See test/triggerPortalIngest.js for the recommended portal upload test script.
 // ---------------------------------------------------------------------------
-const CLIENT_ID      = process.env.TEST_CLIENT_ID || 'replace-with-a-valid-uuid';
-const SOURCE_FILE_ID = process.env.TEST_FILE_ID   || 'replace-with-a-google-drive-file-id';
-const FILE_NAME      = process.env.TEST_FILE_NAME || 'sample_plain.txt';
-const MIME_TYPE      = process.env.TEST_MIME_TYPE || 'text/plain';
+const CLIENT_ID      = process.env.TEST_CLIENT_ID    || 'replace-with-a-valid-uuid';
+const SOURCE_FILE_ID = process.env.TEST_FILE_ID      || 'replace-with-a-stable-file-id';
+const FILE_NAME      = process.env.TEST_FILE_NAME    || 'sample_plain.txt';
+const MIME_TYPE      = process.env.TEST_MIME_TYPE    || 'text/plain';
+const STORAGE_PATH   = process.env.TEST_STORAGE_PATH || `uploads/${CLIENT_ID}/${FILE_NAME}`;
 
 async function main() {
   console.log(`Triggering ingest for file: ${FILE_NAME} (${SOURCE_FILE_ID})`);
@@ -31,7 +33,8 @@ async function main() {
       sourceFileId: SOURCE_FILE_ID,
       fileName: FILE_NAME,
       mimeType: MIME_TYPE,
-      sourceProvider: 'google_drive',
+      sourceProvider: 'portal_upload',
+      storagePath: STORAGE_PATH,
     }),
   });
 

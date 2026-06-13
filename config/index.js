@@ -31,14 +31,6 @@ const config = {
     eventKey: process.env.INNGEST_EVENT_KEY,
     signingKey: process.env.INNGEST_SIGNING_KEY,
   },
-  googleDrive: {
-    folderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
-    serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    // Replace literal \n with real newlines (common when pasting from .env)
-    privateKey: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-      ? process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n')
-      : undefined,
-  },
   slack: {
     botToken: process.env.SLACK_BOT_TOKEN,
     signingSecret: process.env.SLACK_SIGNING_SECRET,
