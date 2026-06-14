@@ -37,8 +37,33 @@ async function parseDocument(buffer, mimeType, fileName) {
 
   if (type === 'application/pdf') {
     const pdfParse = require('pdf-parse');
-    const result = await pdfParse(buffer);
-    return cleanText(result.text);
+    const pageTexts = [];
+    let pageNumber = 0;
+
+    const result = await pdfParse(buffer, {
+      pagerender: async (pageData) => {
+        pageNumber += 1;
+        const currentPage = pageNumber;
+        const content = await pageData.getTextContent();
+        let lastY = null;
+        let text = '';
+        for (const item of content.items) {
+          if (lastY === null || lastY === item.transform[5]) {
+            text += item.str;
+          } else {
+            text += '\n' + item.str;
+          }
+          lastY = item.transform[5];
+        }
+        pageTexts.push({ pageNumber: currentPage, text });
+        return text;
+      },
+    });
+
+    return {
+      text: cleanText(result.text),
+      pages: pageTexts.map((p) => ({ pageNumber: p.pageNumber, text: cleanText(p.text) })),
+    };
   }
 
   // Google Docs exports should have already been converted to text/plain by googleDriveService

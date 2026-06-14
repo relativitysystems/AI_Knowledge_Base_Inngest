@@ -272,16 +272,25 @@ router.post('/query', async (req, res, next) => {
     // 3. Generate answer
     const answer = await openaiService.generateRagAnswer(question, chunks, sessionMessages);
 
-    // 4. Build sources list (deduplicated by file name)
-    const sourceSet = new Set();
-    const sources = [];
+    // 4. Build sources list (deduplicated by documentId, with page numbers when available)
+    const sourceMap = new Map();
     for (const chunk of chunks) {
       const name = chunk.metadata && chunk.metadata.fileName ? chunk.metadata.fileName : 'unknown';
-      if (!sourceSet.has(name)) {
-        sourceSet.add(name);
-        sources.push({ fileName: name, documentId: chunk.document_id });
+      const docId = chunk.document_id;
+      if (!sourceMap.has(docId)) {
+        sourceMap.set(docId, { fileName: name, documentId: docId, pages: new Set() });
+      }
+      if (chunk.metadata && chunk.metadata.pageNumber != null) {
+        sourceMap.get(docId).pages.add(chunk.metadata.pageNumber);
       }
     }
+    const sources = Array.from(sourceMap.values()).map((s) => {
+      const src = { fileName: s.fileName, documentId: s.documentId };
+      if (s.pages.size > 0) {
+        src.pages = Array.from(s.pages).sort((a, b) => a - b);
+      }
+      return src;
+    });
 
     const chunkMetadata = {
       chunkCount: chunks.length,

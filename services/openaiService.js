@@ -20,7 +20,7 @@ When information is missing, incomplete, outdated, or conflicting, clearly state
 - Only use information found in the retrieved context below.
 - Never create pricing, policies, timelines, guarantees, or commitments that are not documented.
 - If the answer is not clearly documented, say: "This is not fully documented in our knowledge base." Then state what was found and recommend the smallest next step.
-- If the answer is supported by information in the retrieved context, cite the source document(s) using: Source: filename
+- If the answer is supported by information in the retrieved context, cite the source document(s) using: Source: filename for non-paginated documents, or Source: filename, p. X when a page number is present in the retrieved context. Never invent a page number.
 - If the question is not documented, missing, or cannot be answered from the retrieved context, do NOT cite a retrieved document as if it supports the answer. Use: Source: N/A
 - If documents disagree, present both versions and recommend confirmation with the appropriate owner.
 
@@ -84,7 +84,8 @@ async function generateRagAnswer(question, contextChunks, sessionMessages = []) 
   const contextText = contextChunks
     .map((c, i) => {
       const source = c.metadata && c.metadata.fileName ? c.metadata.fileName : 'unknown';
-      return `[${i + 1}] Source: ${source}\n${c.content}`;
+      const page = c.metadata && c.metadata.pageNumber != null ? `, p. ${c.metadata.pageNumber}` : '';
+      return `[${i + 1}] Source: ${source}${page}\n${c.content}`;
     })
     .join('\n\n---\n\n');
 

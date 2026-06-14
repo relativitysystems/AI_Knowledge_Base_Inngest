@@ -79,16 +79,19 @@ const ingestDocument = inngest.createFunction(
       });
 
       // -- Step 5: Parse document to plain text --------------------------------
-      const rawText = await step.run('parse-document', async () => {
+      const parsed = await step.run('parse-document', async () => {
         const buf = Buffer.from(buffer, 'base64');
         return documentParser.parseDocument(buf, resolvedMimeType, fileName);
       });
 
-      if (!rawText || !rawText.trim()) throw new Error('Parsed document produced no text');
+      const parsedText = typeof parsed === 'string' ? parsed : (parsed && parsed.text) || '';
+      const parsedPages = (parsed && typeof parsed === 'object' && parsed.pages) || null;
+
+      if (!parsedText || !parsedText.trim()) throw new Error('Parsed document produced no text');
 
       // -- Step 6: Compute content hash ----------------------------------------
       const contentHash = await step.run('compute-hash', async () => {
-        return crypto.createHash('sha256').update(rawText).digest('hex');
+        return crypto.createHash('sha256').update(parsedText).digest('hex');
       });
 
       // Content hash dedup
@@ -135,12 +138,23 @@ const ingestDocument = inngest.createFunction(
 
       // -- Step 9: Split text into chunks --------------------------------------
       const chunks = await step.run('chunk-text', async () => {
-        return chunkService.chunkText(rawText, {
-          clientId,
-          fileName,
-          sourceProvider,
-          sourceFileId,
-        });
+        const baseMetadata = { clientId, fileName, sourceProvider, sourceFileId };
+        if (parsedPages && parsedPages.length > 0) {
+          const allChunks = [];
+          let globalIndex = 0;
+          for (const page of parsedPages) {
+            if (!page.text || !page.text.trim()) continue;
+            const pageChunks = chunkService.chunkText(page.text, {
+              ...baseMetadata,
+              pageNumber: page.pageNumber,
+            });
+            for (const c of pageChunks) {
+              allChunks.push({ ...c, chunkIndex: globalIndex++ });
+            }
+          }
+          if (allChunks.length) return allChunks;
+        }
+        return chunkService.chunkText(parsedText, baseMetadata);
       });
 
       if (!chunks.length) throw new Error('Document produced zero chunks');
