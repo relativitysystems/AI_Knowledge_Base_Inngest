@@ -216,11 +216,27 @@ async function getDistinctClientIds() {
 // ---------------------------------------------------------------------------
 
 async function deleteChunksForDocument(documentId) {
-  const { error } = await aikbSupabase
+  console.log(`[deleteChunksForDocument] START | docId=${documentId}`);
+  const start = Date.now();
+
+  const query = aikbSupabase
     .from('knowledge_chunks')
     .delete()
     .eq('document_id', documentId);
+
+  const timeout = new Promise((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`deleteChunksForDocument timed out after 15s (docId=${documentId})`)),
+      15_000
+    )
+  );
+
+  const { data, error } = await Promise.race([query, timeout]);
+
+  console.log(`[deleteChunksForDocument] END | docId=${documentId} | elapsed=${Date.now() - start}ms`);
+
   if (error) throw new Error(`deleteChunksForDocument: ${error.message}`);
+  return data;
 }
 
 async function insertKnowledgeChunks(chunks) {

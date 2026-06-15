@@ -196,7 +196,11 @@ const ingestDocument = inngest.createFunction(
       console.log(`[ingest] START delete-old-chunks | ${tag(jobId, sourceFileId, documentId)}`);
       const t8 = Date.now();
       await step.run('delete-old-chunks', async () => {
-        await supabaseService.deleteChunksForDocument(documentId);
+        await withTimeout(
+          15_000,
+          'delete-old-chunks / deleteChunksForDocument',
+          supabaseService.deleteChunksForDocument(documentId)
+        );
       });
       console.log(`[ingest] END   delete-old-chunks | ${tag(jobId, sourceFileId, documentId)} | elapsed=${Date.now() - t8}ms`);
 
