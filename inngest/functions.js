@@ -190,7 +190,11 @@ const ingestDocument = inngest.createFunction(
       return { success: true, documentId, chunkCount: chunks.length };
     } catch (err) {
       if (jobId) await supabaseService.logIngestionError(jobId, documentId || null, err);
-      if (documentId) await supabaseService.markDocumentError(documentId, err.message);
+      if (documentId) {
+        await supabaseService.markDocumentError(documentId, err.message).catch((dbErr) => {
+          console.error('[ingest] markDocumentError failed:', dbErr.message);
+        });
+      }
       throw err;
     }
   }

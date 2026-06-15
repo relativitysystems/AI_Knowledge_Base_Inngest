@@ -8,6 +8,27 @@ class UnsupportedMimeTypeError extends Error {
   }
 }
 
+// Maximum time to wait for a single pdfParse() call before giving up.
+const PDF_PARSE_TIMEOUT_MS = 60_000;
+
+/**
+ * Wraps a pdfParse() call with a hard timeout so that a hanging
+ * getTextContent() inside pdf.js cannot freeze the Inngest step indefinitely.
+ */
+function parsePdf(buffer, opts) {
+  const pdfParse = require('pdf-parse');
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(
+      () => reject(new Error(`PDF parsing timed out after ${PDF_PARSE_TIMEOUT_MS / 1000}s`)),
+      PDF_PARSE_TIMEOUT_MS
+    );
+    pdfParse(buffer, opts).then(
+      (r) => { clearTimeout(id); resolve(r); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
+}
+
 /**
  * Extract plain text from a document buffer.
  *
@@ -22,7 +43,7 @@ class UnsupportedMimeTypeError extends Error {
  * @param {Buffer} buffer    Raw file content
  * @param {string} mimeType  MIME type string
  * @param {string} fileName  Used only for error messages
- * @returns {Promise<string>} Extracted plain text
+ * @returns {Promise<{ text: string, pages: Array<{ pageNumber: number, text: string }> } | string>}
  */
 async function parseDocument(buffer, mimeType, fileName) {
   if (!Buffer.isBuffer(buffer)) {
@@ -36,34 +57,42 @@ async function parseDocument(buffer, mimeType, fileName) {
   }
 
   if (type === 'application/pdf') {
-    const pdfParse = require('pdf-parse');
-    const pageTexts = [];
-    let pageNumber = 0;
+    // Do NOT use a custom pagerender callback.  The async getTextContent()
+    // call on the pdf.js page proxy can hang indefinitely for certain PDF
+    // structures, leaving the Promise unresolved and the Inngest step frozen
+    // with no error ever logged.
+    //
+    // Instead we use pdf-parse's built-in renderer (which passes proper
+    // normalizeWhitespace options to getTextContent) and reconstruct per-page
+    // text via differential parsing: pdfParse(buffer, { max: N }).text
+    // contains the concatenated text of pages 1..N separated by "\n\n", so
+    // slicing off the previous cumulative string isolates page N.
 
-    const result = await pdfParse(buffer, {
-      pagerender: async (pageData) => {
-        pageNumber += 1;
-        const currentPage = pageNumber;
-        const content = await pageData.getTextContent();
-        let lastY = null;
-        let text = '';
-        for (const item of content.items) {
-          if (lastY === null || lastY === item.transform[5]) {
-            text += item.str;
-          } else {
-            text += '\n' + item.str;
-          }
-          lastY = item.transform[5];
-        }
-        pageTexts.push({ pageNumber: currentPage, text });
-        return text;
-      },
-    });
+    // Full parse — gives us the complete text and the total page count.
+    const fullResult = await parsePdf(buffer);
+    const numPages = fullResult.numpages;
+    const fullText = cleanText(fullResult.text);
 
-    return {
-      text: cleanText(result.text),
-      pages: pageTexts.map((p) => ({ pageNumber: p.pageNumber, text: cleanText(p.text) })),
-    };
+    if (numPages === 0) {
+      return { text: fullText, pages: [] };
+    }
+
+    if (numPages === 1) {
+      return { text: fullText, pages: [{ pageNumber: 1, text: fullText }] };
+    }
+
+    // Multi-page: derive each page's text by slicing the cumulative string.
+    // We reuse fullResult for the last page to save one extra pdfParse call.
+    const pages = [];
+    let cumulative = '';
+    for (let i = 1; i <= numPages; i++) {
+      const r = i === numPages ? fullResult : await parsePdf(buffer, { max: i });
+      const rawPage = r.text.slice(cumulative.length);
+      pages.push({ pageNumber: i, text: cleanText(rawPage) });
+      cumulative = r.text;
+    }
+
+    return { text: fullText, pages };
   }
 
   // Google Docs exports should have already been converted to text/plain by googleDriveService
