@@ -5,6 +5,12 @@ const config = require('../config');
 
 const openai = new OpenAI({ apiKey: config.openai.apiKey });
 
+// Log key presence at startup without printing the value.
+console.log(
+  `[openaiService] init | OPENAI_API_KEY present=${!!config.openai.apiKey}` +
+  ` | embeddingModel=${config.openai.embeddingModel}`
+);
+
 // System prompt used for all RAG query completions.
 // Mirrors the Relativity AI agent system prompt from the n8n workflow.
 const RAG_SYSTEM_PROMPT = `You are the internal knowledge assistant for Relativity Systems clients.
@@ -35,6 +41,9 @@ Source`;
 // Embeddings
 // ---------------------------------------------------------------------------
 
+const EMBEDDING_BATCH_SIZE = 100;
+const EMBEDDING_TIMEOUT_MS = 60_000;
+
 /**
  * Generate embeddings for an array of text strings.
  * Batches requests to stay within OpenAI's 2048-input limit per call.
@@ -43,21 +52,59 @@ Source`;
 async function generateEmbeddings(texts) {
   if (!texts.length) return [];
 
-  const BATCH_SIZE = 100;
+  const totalBatches = Math.ceil(texts.length / EMBEDDING_BATCH_SIZE);
+  console.log(
+    `[generateEmbeddings] START | model=${config.openai.embeddingModel}` +
+    ` | totalTexts=${texts.length} | batchSize=${EMBEDDING_BATCH_SIZE} | totalBatches=${totalBatches}`
+  );
+
   const results = [];
 
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE);
-    const response = await openai.embeddings.create({
-      model: config.openai.embeddingModel,
-      input: batch,
-    });
+  for (let i = 0; i < texts.length; i += EMBEDDING_BATCH_SIZE) {
+    const batch = texts.slice(i, i + EMBEDDING_BATCH_SIZE);
+    const batchNum = Math.floor(i / EMBEDDING_BATCH_SIZE) + 1;
+
+    console.log(`[generateEmbeddings] START batch ${batchNum}/${totalBatches} | size=${batch.length}`);
+    const start = Date.now();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
+
+    let response;
+    try {
+      response = await openai.embeddings.create(
+        { model: config.openai.embeddingModel, input: batch },
+        { signal: controller.signal }
+      );
+    } catch (err) {
+      if (controller.signal.aborted) {
+        const msg = `embeddings.create timed out after ${EMBEDDING_TIMEOUT_MS / 1000}s` +
+          ` (batch ${batchNum}/${totalBatches})`;
+        console.error(`[generateEmbeddings] TIMEOUT batch ${batchNum}/${totalBatches}` +
+          ` | elapsed=${Date.now() - start}ms`);
+        throw new Error(msg);
+      }
+      console.error(
+        `[generateEmbeddings] ERROR batch ${batchNum}/${totalBatches}` +
+        ` | elapsed=${Date.now() - start}ms` +
+        ` | status=${err.status ?? 'unknown'}` +
+        ` | code=${err.code ?? 'unknown'}` +
+        ` | message=${err.message}`
+      );
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    console.log(`[generateEmbeddings] END batch ${batchNum}/${totalBatches} | elapsed=${Date.now() - start}ms`);
+
     const embeddings = response.data
       .sort((a, b) => a.index - b.index)
       .map((item) => item.embedding);
     results.push(...embeddings);
   }
 
+  console.log(`[generateEmbeddings] END | totalEmbeddings=${results.length}`);
   return results;
 }
 
