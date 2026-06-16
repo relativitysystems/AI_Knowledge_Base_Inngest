@@ -101,36 +101,30 @@ const ingestDocument = inngest.createFunction(
       });
       console.log(`[ingest] END   update-job-running | ${tag(jobId, sourceFileId, documentId)} | elapsed=${Date.now() - t3}ms`);
 
-      // -- Step 4: Fetch document from Supabase Storage -----------------------
-      console.log(`[ingest] START fetch-document | ${tag(jobId, sourceFileId, documentId)} | storagePath=${storagePath}`);
-      const t4 = Date.now();
-      const { buffer, resolvedMimeType } = await step.run('fetch-document', async () => {
+      // -- Step 4+5: Fetch and parse (combined so the buffer never enters Inngest step state) --
+      console.log(`[ingest] START fetch-and-parse-document | ${tag(jobId, sourceFileId, documentId)} | storagePath=${storagePath}`);
+      const t45 = Date.now();
+      const { parsed, resolvedMimeType } = await step.run('fetch-and-parse-document', async () => {
+        // Download — 30 s hard timeout
         const result = await withTimeout(
           30_000,
-          'fetch-document / downloadFromStorage',
+          'fetch-and-parse-document / downloadFromStorage',
           supabaseService.downloadFromStorage(storagePath)
         );
         if (result.buffer.length > config.maxUploadBytes) {
           throw new Error(`Uploaded file exceeds max size limit of ${config.maxUploadBytes} bytes`);
         }
         const finalMime = result.resolvedMimeType || mimeType;
-        // Buffer doesn't survive Inngest step serialization; convert to base64
-        return { buffer: result.buffer.toString('base64'), resolvedMimeType: finalMime };
-      });
-      console.log(`[ingest] END   fetch-document | ${tag(jobId, sourceFileId, documentId)} | elapsed=${Date.now() - t4}ms | mime=${resolvedMimeType}`);
 
-      // -- Step 5: Parse document to plain text --------------------------------
-      console.log(`[ingest] START parse-document | ${tag(jobId, sourceFileId, documentId)} | mime=${resolvedMimeType}`);
-      const t5 = Date.now();
-      const parsed = await step.run('parse-document', async () => {
-        const buf = Buffer.from(buffer, 'base64');
-        return withTimeout(
+        // Parse — 60 s hard timeout; buffer stays in local scope only, never serialised
+        const parsedResult = await withTimeout(
           60_000,
-          'parse-document / parseDocument',
-          documentParser.parseDocument(buf, resolvedMimeType, fileName)
+          'fetch-and-parse-document / parseDocument',
+          documentParser.parseDocument(result.buffer, finalMime, fileName)
         );
+        return { parsed: parsedResult, resolvedMimeType: finalMime };
       });
-      console.log(`[ingest] END   parse-document | ${tag(jobId, sourceFileId, documentId)} | elapsed=${Date.now() - t5}ms`);
+      console.log(`[ingest] END   fetch-and-parse-document | ${tag(jobId, sourceFileId, documentId)} | elapsed=${Date.now() - t45}ms | mime=${resolvedMimeType}`);
 
       const parsedText = typeof parsed === 'string' ? parsed : (parsed && parsed.text) || '';
       const parsedPages = (parsed && typeof parsed === 'object' && parsed.pages) || null;
