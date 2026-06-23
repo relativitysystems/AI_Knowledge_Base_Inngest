@@ -288,6 +288,31 @@ router.post('/query', async (req, res, next) => {
       content: question,
     });
 
+    // Classify intent before running retrieval to avoid vector search on greetings,
+    // small talk, help requests, and vague/unsupported messages.
+    const intent = await openaiService.classifyQueryIntent(question);
+
+    if (!intent.shouldRunRetrieval) {
+      const answer = openaiService.buildNonRetrievalAnswer(question, intent);
+      await supabaseService.createChatMessage({
+        clientId,
+        sessionId,
+        role: 'assistant',
+        content: answer,
+        sources: [],
+        metadata: { intent, retrievalSkipped: true },
+      });
+      return res.json({
+        answer,
+        sources: [],
+        sessionId,
+        isKnowledgeGap: false,
+        isConversational: intent.intent === 'casual_conversation',
+        intent,
+        userMessageId: userMsg.id,
+      });
+    }
+
     // 1. Embed the question
     const queryEmbedding = await openaiService.embedQuery(question);
 
@@ -313,8 +338,9 @@ router.post('/query', async (req, res, next) => {
         role: 'assistant',
         content: answer,
         sources: [],
+        metadata: { intent, retrievalSkipped: false },
       });
-      return res.json({ answer, sources: [], sessionId, isKnowledgeGap: true, gapReason: 'no_chunks_found', userMessageId: userMsg.id });
+      return res.json({ answer, sources: [], sessionId, isKnowledgeGap: true, gapReason: 'no_chunks_found', userMessageId: userMsg.id, intent });
     }
 
     // 3. Generate answer
@@ -356,9 +382,9 @@ router.post('/query', async (req, res, next) => {
         role: 'assistant',
         content: normalizedAnswer,
         sources: [],
-        metadata: chunkMetadata,
+        metadata: { ...chunkMetadata, intent, retrievalSkipped: false },
       });
-      return res.json({ answer: normalizedAnswer, sources: [], sessionId, isKnowledgeGap: true, gapReason: 'answer_indicated_not_found', userMessageId: userMsg.id });
+      return res.json({ answer: normalizedAnswer, sources: [], sessionId, isKnowledgeGap: true, gapReason: 'answer_indicated_not_found', userMessageId: userMsg.id, intent });
     }
 
     // 5. Save the assistant message with real sources and chunk metadata
@@ -368,10 +394,10 @@ router.post('/query', async (req, res, next) => {
       role: 'assistant',
       content: answer,
       sources,
-      metadata: chunkMetadata,
+      metadata: { ...chunkMetadata, intent, retrievalSkipped: false },
     });
 
-    res.json({ answer, sources, sessionId, isKnowledgeGap: false });
+    res.json({ answer, sources, sessionId, isKnowledgeGap: false, userMessageId: userMsg.id, intent });
   } catch (err) {
     next(err);
   }
